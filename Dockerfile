@@ -30,6 +30,8 @@ RUN confluent-hub install --no-prompt jcustenborder/kafka-connect-json-schema:0.
 # Install Elasticsearch connector
 RUN confluent-hub install --no-prompt confluentinc/kafka-connect-elasticsearch:11.0.0
 
+COPY ./plugins/* /usr/share/confluent-hub-components/
+
 
 # Stage 2 -- copy jars
 FROM $REPOSITORY/cp-server-connect:$CP_VERSION

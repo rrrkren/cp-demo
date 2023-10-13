@@ -1,4 +1,72 @@
-CREATE STREAM wikipedia WITH (kafka_topic='wikipedia.parsed', value_format='AVRO');
-CREATE STREAM wikipedianobot AS SELECT *, (length->new - length->old) AS BYTECHANGE FROM wikipedia WHERE bot = false AND length IS NOT NULL AND length->new IS NOT NULL AND length->old IS NOT NULL;
-CREATE STREAM wikipediabot AS SELECT *, (length->new - length->old) AS BYTECHANGE FROM wikipedia WHERE bot = true AND length IS NOT NULL AND length->new IS NOT NULL AND length->old IS NOT NULL;
-CREATE TABLE wikipedia_count_gt_1 WITH (key_format='JSON') AS SELECT user, meta->uri AS URI, count(*) AS COUNT FROM wikipedia WINDOW TUMBLING (size 300 second) WHERE meta->domain = 'commons.wikimedia.org' GROUP BY user, meta->uri HAVING count(*) > 1;
+CREATE STREAM FLOW_EVENTS_BLOCK (PAYLOAD STRING) WITH (KAFKA_TOPIC='flow-testnet', VALUE_FORMAT='JSON', PARTITIONS=12);
+
+CREATE STREAM FLOW_EVENTS_BLOCK_PARSED
+       WITH (KAFKA_TOPIC='flow_events_block_parsed', PARTITIONS=12) AS
+       SELECT
+           TRANSFORM(JSON_ITEMS(JSON_RECORDS(PAYLOAD)['events']), x=>JSON_RECORDS(x)) as EVENTS,
+           JSON_RECORDS(PAYLOAD) as PAYLOAD
+       from FLOW_EVENTS_BLOCK;
+
+
+CREATE STREAM FLOW_EVENTS WITH (KAFKA_TOPIC='flow_events', VALUE_FORMAT='JSON', PARTITIONS=12) AS SELECT
+    EXPLODE(EVENTS) EVENT,
+    PAYLOAD['block_time'] BLOCK_TIME,
+    PAYLOAD['block_height'] BLOCK_HEIGHT,
+    PAYLOAD['tx_idx'] TXIDX,
+    PAYLOAD['tx_id'] TXID,
+    PAYLOAD['error'] ERROR,
+    PAYLOAD['block_id'] BLOCK_ID
+                          FROM FLOW_EVENTS_BLOCK_PARSED;
+
+
+CREATE STREAM FLOW_EVENTS_PARSED WITH (KAFKA_TOPIC='flow_events_parsed',VALUE_FORMAT='JSON_SR', PARTITIONS=12) AS SELECT
+    EVENT['event_id'] EVENT_ID,
+    STRUCT(
+    VERSION_STRING:=((LPAD(BLOCK_HEIGHT, 20, '0') + LPAD(TXIDX, 10, '0')) + LPAD(EVENT['event_index'], 10, '0')),
+    BLOCK_TIME_TS:=PARSE_TIMESTAMP( BLOCK_TIME , 'yyyy-MM-dd''T''HH:mm:ss.SSSSSSSSSX'),
+    EVENT_ID:=EVENT['event_id'],
+    EVENT_TYPE:=EVENT['event_type'],
+    TX_ID:=TXID,
+    TX_IDX:=TXIDX,
+    EVT_IDX:=EVENT['event_index'],
+    PAYLOAD:=EVENT['payload'],
+    HEIGHT:=BLOCK_HEIGHT
+    ) EVENT_META
+                                 FROM FLOW_EVENTS
+                                     PARTITION BY EVENT['event_id']
+                                     EMIT CHANGES;
+
+
+CREATE STREAM FLOW_EVENTS_TOPSHOT_DEPOSITS WITH (KAFKA_TOPIC='flow_events_topshot_deposits', VALUE_FORMAT='JSON_SR', PARTITIONS=12) AS SELECT
+    EVENT_ID EVENT_ID,
+    EVENT_META EVENT_META,
+    REDUCE(TRANSFORM(JSON_ITEMS(EXTRACTJSONFIELD(FROM_BYTES(EVENT_META->PAYLOAD, 'ascii'), '$.value.fields')), (X) => JSON_RECORDS(X)), AS_MAP(ARRAY['NFTID', 'TO'], ARRAY['', '']), (S, X) => (CASE WHEN (X['name'] = 'id') THEN MAP_UNION(S, AS_MAP(ARRAY['NFTID'], ARRAY[EXTRACTJSONFIELD(X['value'], '$.value')])) WHEN (X['name'] = 'to') THEN MAP_UNION(S, AS_MAP(ARRAY['TO'], ARRAY[EXTRACTJSONFIELD(X['value'], '$.value.value')])) ELSE S END)) EVENT_FIELDS
+                             FROM FLOW_EVENTS_PARSED
+                             WHERE (EVENT_META->EVENT_TYPE = 'A.877931736ee77cff.TopShot.Deposit')
+                                 PARTITION BY EVENT_ID
+                                 EMIT CHANGES;
+
+
+CREATE TABLE FLOW_EVENTS_TS_DEPOSITS_MAX_VERSION WITH (KAFKA_TOPIC='flow_events_ts_deposits_maxversion', PARTITIONS=12, VALUE_FORMAT='JSON_SR') AS SELECT
+                               TOPSHOT_DEPOSITS.EVENT_FIELDS['NFTID'] NFTID,
+                               MAX(TOPSHOT_DEPOSITS.EVENT_META->VERSION_STRING) MAX_VERSION
+                           FROM FLOW_EVENTS_TOPSHOT_DEPOSITS TOPSHOT_DEPOSITS
+                           GROUP BY TOPSHOT_DEPOSITS.EVENT_FIELDS['NFTID']
+    EMIT CHANGES;
+
+CREATE TABLE FLOW_EVENTS_TOPSHOT_DEPOSITS_TABLE WITH (KAFKA_TOPIC='flow_events_topshot_deposits_table', PARTITIONS=12, VALUE_FORMAT='JSON_SR') AS SELECT
+                 MM_TS_DEPOSITS.EVENT_META->VERSION_STRING VERSION_STRING,
+                 LATEST_BY_OFFSET(MM_TS_DEPOSITS.EVENT_META) EVENT_META,
+                 LATEST_BY_OFFSET(MM_TS_DEPOSITS.EVENT_FIELDS) EVENT_FIELDS
+         FROM FLOW_EVENTS_TOPSHOT_DEPOSITS MM_TS_DEPOSITS
+         GROUP BY MM_TS_DEPOSITS.EVENT_META->VERSION_STRING
+    EMIT CHANGES;
+
+CREATE TABLE MM_TS_LATEST_OWNERSHIP WITH (KAFKA_TOPIC='flow_events_ts_latest_ownership', PARTITIONS=12, VALUE_FORMAT='JSON_SR') AS SELECT
+                    MV.NFTID NFTID,
+                    TSD.EVENT_META EVENT_META,
+                    TSD.EVENT_FIELDS EVENT_FIELDS
+                FROM FLOW_EVENTS_TS_DEPOSITS_MAX_VERSION MV
+                         INNER JOIN FLOW_EVENTS_TOPSHOT_DEPOSITS_TABLE TSD ON ((MV.MAX_VERSION = TSD.VERSION_STRING))
+    PARTITION BY MV.NFTID
+EMIT CHANGES;

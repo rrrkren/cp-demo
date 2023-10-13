@@ -1,0 +1,34 @@
+{
+  "name" : "kafka-connect-http",
+  "version" : "0.8.11",
+  "title" : "Kafka Connect HTTP",
+  "description" : "Kafka Connect connector that enables Change Data Capture from JSON/HTTP APIs into Kafka.",
+  "owner" : {
+    "username" : "castorm",
+    "type" : "user",
+    "name" : "Cástor Rodríguez",
+    "url" : "https://castorm.es"
+  },
+  "support" : {
+    "summary" : "Cástor Rodríguez supports the HTTP plugin alongside other contributors of\nthis open source project.",
+    "url" : "https://github.com/castorm/kafka-connect-http/issues",
+    "provider_name" : "Cástor Rodríguez"
+  },
+  "tags" : [ "rest", "cdc", "change-data-capture", "http", "json", "api" ],
+  "requirements" : [ "HTTP resource to perform requests against", "To perform change-data-capture with effectively-once delivery\n                                            guarantees, the HTTP resource should allow ordering and filtering by one or\n                                            more monotonically increasing properties such as sequence numbers or\n                                            timestamps" ],
+  "features" : {
+    "supported_encodings" : [ "any" ],
+    "single_message_transforms" : true,
+    "confluent_control_center_integration" : false,
+    "kafka_connect_api" : true
+  },
+  "documentation_url" : "https://castorm.github.io/kafka-connect-http",
+  "source_url" : "https://castorm.github.io/kafka-connect-http",
+  "docker_image" : { },
+  "license" : [ {
+    "name" : "Apache License version 2.0",
+    "url" : "http://www.apache.org/licenses/LICENSE-2.0.txt"
+  } ],
+  "component_types" : [ "source" ],
+  "release_date" : "2021-03-26"
+}

@@ -99,20 +99,30 @@ retry $MAX_WAIT host_check_up connect || exit 1
 
 #-------------------------------------------------------------------------------
 
-echo -e "\nStart streaming from the Wikipedia SSE source connector:"
-${DIR}/connectors/submit_wikipedia_sse_config.sh || exit 1
+#echo -e "\nStart streaming from the Wikipedia SSE source connector:"
+#${DIR}/connectors/submit_wikipedia_sse_config.sh || exit 1
+#
+## Verify connector is running
+#MAX_WAIT=120
+#echo
+#echo "Waiting up to $MAX_WAIT seconds for connector to be in RUNNING state"
+#retry $MAX_WAIT check_connector_status_running "wikipedia-sse" || exit 1
+#
+## Verify wikipedia.parsed topic is populated and schema is registered
+#MAX_WAIT=120
+#echo
+#echo -e "Waiting up to $MAX_WAIT seconds for subject wikipedia.parsed-value (for topic wikipedia.parsed) to be registered in Schema Registry"
+#retry $MAX_WAIT host_check_schema_registered || exit 1
+
+#--------------------------------------------------------------------------------
+echo -e "\nStart streaming from flow testnet HTTP connector:"
+${DIR}/connectors/submit_flowtestnet_source_config.sh || exit 1
 
 # Verify connector is running
 MAX_WAIT=120
 echo
 echo "Waiting up to $MAX_WAIT seconds for connector to be in RUNNING state"
-retry $MAX_WAIT check_connector_status_running "wikipedia-sse" || exit 1
-
-# Verify wikipedia.parsed topic is populated and schema is registered
-MAX_WAIT=120
-echo
-echo -e "Waiting up to $MAX_WAIT seconds for subject wikipedia.parsed-value (for topic wikipedia.parsed) to be registered in Schema Registry"
-retry $MAX_WAIT host_check_schema_registered || exit 1
+retry $MAX_WAIT check_connector_status_running "flowtestnet-source" || exit 1
 
 #-------------------------------------------------------------------------------
 
@@ -142,19 +152,19 @@ retry $MAX_WAIT host_check_up ksqldb-server || exit 1
 echo -e "\nRun ksqlDB queries:"
 ${DIR}/ksqlDB/run_ksqlDB.sh
 
-if [[ "$VIZ" == "true" ]]; then
-  build_viz || exit 1
-fi
+#if [[ "$VIZ" == "true" ]]; then
+#  build_viz || exit 1
+#fi
 
-echo -e "\nStart additional consumers to read from topics WIKIPEDIANOBOT, WIKIPEDIA_COUNT_GT_1"
-${DIR}/consumers/listen_WIKIPEDIANOBOT.sh
-${DIR}/consumers/listen_WIKIPEDIA_COUNT_GT_1.sh
-
-echo
-echo
-echo "Start the Kafka Streams application wikipedia-activity-monitor"
-docker-compose up --no-recreate -d streams-demo
-echo "..."
+#echo -e "\nStart additional consumers to read from topics WIKIPEDIANOBOT, WIKIPEDIA_COUNT_GT_1"
+#${DIR}/consumers/listen_WIKIPEDIANOBOT.sh
+#${DIR}/consumers/listen_WIKIPEDIA_COUNT_GT_1.sh
+#
+#echo
+#echo
+#echo "Start the Kafka Streams application wikipedia-activity-monitor"
+#docker-compose up --no-recreate -d streams-demo
+#echo "..."
 
 
 #-------------------------------------------------------------------------------
